@@ -99,7 +99,7 @@ module.exports = async function handler(req, res) {
       // 构建 Notion properties
       const properties = {
         'Date': { title: [{ text: { content: date } }] },
-        '#金额': { number: Number(amount) },
+        '金额': { number: Number(amount) },
         '收支类型': { select: { name: type } },
       };
 
