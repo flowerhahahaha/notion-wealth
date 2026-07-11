@@ -8,7 +8,7 @@ const notion = new Client({ auth: NOTION_API_KEY });
 
 const PROP = {
   date: 'Date',
-  amount: '金额',
+  amount: '#金额',
   type: '收支类型',
   category: '大类',
   subcategory: '小类',
@@ -25,17 +25,46 @@ module.exports = async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // 检查环境变量
   if (!NOTION_API_KEY || !DATABASE_ID) {
     return res.status(500).json({
       success: false,
-      error: '缺少环境变量 NOTION_API_KEY 或 NOTION_DATABASE_ID',
+      error: '环境变量未配置',
+      details: {
+        hasApiKey: !!NOTION_API_KEY,
+        hasDatabaseId: !!DATABASE_ID
+      }
     });
   }
 
   try {
     if (req.method === 'GET') {
-      const records = await queryAllRecords();
-      return res.status(200).json({ success: true, data: records });
+      const response = await notion.databases.query({
+        database_id: DATABASE_ID,
+        page_size: 100,
+        sorts: [{ property: PROP.date, direction: 'ascending' }],
+      });
+
+      const records = response.results.map(page => {
+        const p = page.properties;
+        return {
+          id: page.id,
+          date: p[PROP.date]?.title?.[0]?.plain_text || null,
+          amount: p[PROP.amount]?.number || 0,
+          type: p[PROP.type]?.select?.name || '',
+          category: p[PROP.category]?.select?.name || '',
+          subcategory: p[PROP.subcategory]?.select?.name || '',
+          account: p[PROP.account]?.select?.name || '',
+          note: p[PROP.note]?.rich_text?.map(t => t.plain_text).join('') || '',
+        };
+      }).filter(r => r.date);
+
+      return res.status(200).json({
+        success: true,
+        data: records,
+        total: response.results.length,
+        filtered: records.length
+      });
     }
 
     if (req.method === 'POST') {
@@ -43,14 +72,12 @@ module.exports = async function handler(req, res) {
       const { date, amount, type, category, subcategory, account, note } = body || {};
 
       if (!date || amount === undefined || amount === null || !type) {
-        return res.status(400).json({ success: false, error: '缺少必填字段：日期 / 金额 / 收支类型' });
+        return res.status(400).json({ success: false, error: '缺少必填字段' });
       }
+
       const numericAmount = Number(amount);
-      if (Number.isNaN(numericAmount) || numericAmount <= 0) {
-        return res.status(400).json({ success: false, error: '金额必须是大于 0 的数字' });
-      }
-      if (type !== '收入' && type !== '支出') {
-        return res.status(400).json({ success: false, error: '收支类型必须是 "收入" 或 "支出"' });
+      if (isNaN(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ success: false, error: '金额必须大于0' });
       }
 
       const properties = {
@@ -61,7 +88,7 @@ module.exports = async function handler(req, res) {
       if (category) properties[PROP.category] = { select: { name: category } };
       if (subcategory) properties[PROP.subcategory] = { select: { name: subcategory } };
       if (account) properties[PROP.account] = { select: { name: account } };
-      if (note) properties[PROP.note] = { rich_text: [{ text: { content: String(note).slice(0, 2000) } }] };
+      if (note) properties[PROP.note] = { rich_text: [{ text: { content: String(note) } }] };
 
       const page = await notion.pages.create({
         parent: { database_id: DATABASE_ID },
@@ -71,64 +98,15 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: true, id: page.id });
     }
 
-    res.setHeader('Allow', ['GET', 'POST', 'OPTIONS']);
-    return res.status(405).json({ success: false, error: `不支持的请求方法: ${req.method}` });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   } catch (err) {
-    console.error('Notion API error:', err);
+    console.error('Notion API Error:', JSON.stringify(err, null, 2));
     return res.status(500).json({
       success: false,
-      error: err && err.message ? err.message : '服务器内部错误',
+      error: err.message || '服务器内部错误',
+      code: err.code || 'unknown',
+      status: err.status || 500,
+      notion_error: err.body || null
     });
   }
 };
-
-async function queryAllRecords() {
-  let results = [];
-  let cursor = undefined;
-
-  do {
-    const response = await notion.databases.query({
-      database_id: DATABASE_ID,
-      start_cursor: cursor,
-      page_size: 100,
-      sorts: [{ property: PROP.date, direction: 'ascending' }],
-    });
-    results = results.concat(response.results);
-    cursor = response.has_more ? response.next_cursor : undefined;
-  } while (cursor);
-
-  return results.map(mapPageToRecord).filter((r) => r.date);
-}
-
-function mapPageToRecord(page) {
-  const p = page.properties || {};
-  return {
-    id: page.id,
-    date: getTitle(p[PROP.date]),
-    amount: getNumber(p[PROP.amount]),
-    type: getSelect(p[PROP.type]),
-    category: getSelect(p[PROP.category]),
-    subcategory: getSelect(p[PROP.subcategory]),
-    account: getSelect(p[PROP.account]),
-    note: getRichText(p[PROP.note]),
-  };
-}
-
-// 关键改动：Date 是 title 类型
-function getTitle(prop) {
-  if (!prop || !Array.isArray(prop.title)) return null;
-  return prop.title.map((t) => t.plain_text).join('') || null;
-}
-
-function getNumber(prop) {
-  return prop && typeof prop.number === 'number' ? prop.number : 0;
-}
-
-function getSelect(prop) {
-  return prop && prop.select && prop.select.name ? prop.select.name : '';
-}
-
-function getRichText(prop) {
-  if (!prop || !Array.isArray(prop.rich_text)) return '';
-  return prop.rich_text.map((t) => t.plain_text).join('');
-}
