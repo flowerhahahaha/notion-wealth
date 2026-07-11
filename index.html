@@ -468,7 +468,7 @@
                 <div id="chartSubcategory" class="chart-container"></div>
             </div>
             <div class="chart-box">
-                <div class="chart-title">📈 每日趋势<span class="chart-title-month" id="titleMonth3"></span></div>
+                <div class="chart-title">📈 月度趋势<span class="chart-title-month" id="titleMonth3"></span></div>
                 <div class="legend-tip">
                     <span style="display:inline-flex;align-items:center;gap:4px;">
                         <span style="display:inline-block;width:20px;height:3px;background:#2d7aff;"></span> 收入
@@ -598,7 +598,6 @@
             const label = `（${monthLabel(viewYear, viewMonth)}）`;
             document.getElementById('titleMonth1').textContent = label;
             document.getElementById('titleMonth2').textContent = label;
-            document.getElementById('titleMonth3').textContent = label;
             document.getElementById('monthIncomeSub').textContent = monthLabel(viewYear, viewMonth) + ' 收入合计';
             document.getElementById('monthExpenseSub').textContent = monthLabel(viewYear, viewMonth) + ' 支出合计';
         }
@@ -726,8 +725,6 @@
 
             let monthIncome = 0,
                 monthExpense = 0;
-            const dailyIncome = {},
-                dailyExpense = {};
             const categoryIncome = {},
                 categoryExpense = {};
             const subcategoryIncome = {},
@@ -736,13 +733,11 @@
             for (const r of monthRecords) {
                 if (r.type === '收入') {
                     monthIncome += r.amount;
-                    dailyIncome[r.date] = (dailyIncome[r.date] || 0) + r.amount;
                     if (r.category) categoryIncome[r.category] = (categoryIncome[r.category] || 0) + r.amount;
                     if (r.subcategory) subcategoryIncome[r.subcategory] = (subcategoryIncome[r.subcategory] || 0) + r
                         .amount;
                 } else if (r.type === '支出') {
                     monthExpense += r.amount;
-                    dailyExpense[r.date] = (dailyExpense[r.date] || 0) + r.amount;
                     if (r.category) categoryExpense[r.category] = (categoryExpense[r.category] || 0) + r.amount;
                     if (r.subcategory) subcategoryExpense[r.subcategory] = (subcategoryExpense[r.subcategory] || 0) + r
                         .amount;
@@ -751,24 +746,6 @@
 
             const monthAvailable = monthIncome - monthIncome * FORCED_SAVING_RATE - monthIncome * FIXED_RATE;
             const monthBalance = monthAvailable - monthExpense;
-
-            // 如果查看的是当前自然月，只画到今天；否则画完整一个月
-            const daysInMonth = new Date(year, month, 0).getDate();
-            const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth() + 1);
-            const lastDay = isCurrentMonth ? Math.min(daysInMonth, now.getDate()) : daysInMonth;
-
-            const dateList = [];
-            for (let d = 1; d <= lastDay; d++) {
-                dateList.push(`${year}-${pad2(month)}-${pad2(d)}`);
-            }
-
-            let cumBalance = 0;
-            const trend = dateList.map(date => {
-                const inc = dailyIncome[date] || 0;
-                const exp = dailyExpense[date] || 0;
-                cumBalance += (inc - exp);
-                return { date, income: inc, expense: exp, cumBalance };
-            });
 
             return {
                 totalAssets,
@@ -780,9 +757,59 @@
                 categoryExpense,
                 subcategoryIncome,
                 subcategoryExpense,
-                trend,
                 recordCount: monthRecords.length
             };
+        }
+
+        // 按月聚合全部记录，用于"月度趋势"图（不受月份选择器的当月过滤影响，
+        // 而是以选中的月份作为窗口终点，往前展示最近 windowSize 个月）
+        function buildMonthlyTrend(records, endYear, endMonth, windowSize) {
+            windowSize = windowSize || 12;
+            if (!records || records.length === 0) return [];
+
+            let minDate = null;
+            for (const r of records) {
+                if (!r.date) continue;
+                const d = new Date(r.date);
+                if (!minDate || d < minDate) minDate = d;
+            }
+            if (!minDate) return [];
+
+            const startYear = minDate.getFullYear();
+            const startMonth = minDate.getMonth() + 1;
+
+            // 从最早一条记录所在月份，一直推到选中的月份，生成连续的月份列表（没数据的月份补 0）
+            const monthList = [];
+            let y = startYear, m = startMonth;
+            let safety = 0;
+            while ((y < endYear || (y === endYear && m <= endMonth)) && safety < 1200) {
+                monthList.push({ year: y, month: m });
+                m += 1;
+                if (m > 12) { m = 1; y += 1; }
+                safety += 1;
+            }
+            if (monthList.length === 0) return [];
+
+            const monthMap = {};
+            for (const r of records) {
+                if (!r.date) continue;
+                const d = new Date(r.date);
+                const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+                if (!monthMap[key]) monthMap[key] = { income: 0, expense: 0 };
+                if (r.type === '收入') monthMap[key].income += r.amount;
+                else if (r.type === '支出') monthMap[key].expense += r.amount;
+            }
+
+            let cumBalance = 0;
+            const full = monthList.map(({ year, month }) => {
+                const key = `${year}-${pad2(month)}`;
+                const income = (monthMap[key] && monthMap[key].income) || 0;
+                const expense = (monthMap[key] && monthMap[key].expense) || 0;
+                cumBalance += (income - expense);
+                return { year, month, label: `${year}-${pad2(month)}`, income, expense, cumBalance };
+            });
+
+            return full.slice(-windowSize);
         }
 
         function renderStats(s) {
@@ -852,7 +879,7 @@
                 tooltip: { trigger: 'axis' },
                 legend: { data: ['收入', '支出', '累计结余'], bottom: 0, left: 'center' },
                 grid: { left: 50, right: 20, top: 20, bottom: 50 },
-                xAxis: { type: 'category', data: trendData.map(d => d.date.slice(5)) },
+                xAxis: { type: 'category', data: trendData.map(d => d.label) },
                 yAxis: { type: 'value', axisLabel: { formatter: '¥{value}' }, splitLine: { lineStyle: { color: '#edf2f7',
                             type: 'dashed' } } },
                 series: [{
@@ -885,7 +912,15 @@
             renderStats(stats);
             pieCategoryChart = renderPie('chartCategory', stats.categoryIncome, stats.categoryExpense, pieCategoryChart);
             pieSubcategoryChart = renderPie('chartSubcategory', stats.subcategoryIncome, stats.subcategoryExpense, pieSubcategoryChart);
-            trendChart = renderTrend('chartTrend', stats.trend, trendChart);
+
+            const monthlyTrend = buildMonthlyTrend(records, viewYear, viewMonth, 12);
+            trendChart = renderTrend('chartTrend', monthlyTrend, trendChart);
+            const titleMonth3 = document.getElementById('titleMonth3');
+            if (monthlyTrend.length > 0) {
+                titleMonth3.textContent = `（${monthlyTrend[0].label} ~ ${monthlyTrend[monthlyTrend.length - 1].label}）`;
+            } else {
+                titleMonth3.textContent = '';
+            }
 
             const dot = document.getElementById('statusDot');
             const txt = document.getElementById('statusText');
