@@ -30,7 +30,7 @@
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             gap: 12px;
         }
         .header-left h1 {
@@ -108,6 +108,73 @@
                 opacity: 0.3;
             }
         }
+
+        /* 工具栏：月份选择 */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            border-radius: 40px;
+            padding: 6px 10px 6px 14px;
+            border: 1px solid #e2e8f0;
+        }
+        .month-nav .month-nav-label {
+            font-size: 13px;
+            color: #6b7a8f;
+            margin-right: 4px;
+        }
+        .month-nav input[type="month"] {
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a2634;
+            background: transparent;
+            font-family: inherit;
+            padding: 2px 4px;
+        }
+        .month-nav input[type="month"]:focus {
+            outline: none;
+        }
+        .btn-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: none;
+            background: #f1f4f8;
+            color: #4a5a6e;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.15s;
+        }
+        .btn-icon:hover {
+            background: #e2e8f0;
+        }
+        .btn-text {
+            background: transparent;
+            border: none;
+            color: #2d7aff;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+        .btn-text:hover {
+            background: #eef4ff;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
@@ -166,6 +233,12 @@
             color: #1a2634;
             padding-left: 4px;
             margin-bottom: 2px;
+        }
+        .chart-title .chart-title-month {
+            font-size: 12px;
+            font-weight: 500;
+            color: #8a9aa8;
+            margin-left: 6px;
         }
         .chart-container {
             width: 100%;
@@ -339,16 +412,26 @@
             </div>
         </div>
 
+        <div class="toolbar">
+            <div class="month-nav">
+                <span class="month-nav-label">查看月份</span>
+                <button class="btn-icon" id="prevMonth" title="上个月">‹</button>
+                <input type="month" id="monthPicker" />
+                <button class="btn-icon" id="nextMonth" title="下个月">›</button>
+                <button class="btn-text" id="thisMonthBtn">本月</button>
+            </div>
+        </div>
+
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
                 <div class="stat-label">🏦 存款总额</div>
                 <div class="stat-value neutral" id="totalAssets">--</div>
-                <div class="stat-sub">所有账户资产</div>
+                <div class="stat-sub">全部账户资产（不受月份筛选影响）</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">📈 月总收入</div>
                 <div class="stat-value positive" id="monthIncome">--</div>
-                <div class="stat-sub">本月收入合计</div>
+                <div class="stat-sub" id="monthIncomeSub">本月收入合计</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">💰 月可支出</div>
@@ -358,7 +441,7 @@
             <div class="stat-card">
                 <div class="stat-label">📉 月总支出</div>
                 <div class="stat-value negative" id="monthExpense">--</div>
-                <div class="stat-sub">本月支出合计</div>
+                <div class="stat-sub" id="monthExpenseSub">本月支出合计</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">✅ 月可结余</div>
@@ -369,7 +452,7 @@
 
         <div class="charts-row">
             <div class="chart-box">
-                <div class="chart-title">📂 大类分布</div>
+                <div class="chart-title">📂 大类分布<span class="chart-title-month" id="titleMonth1"></span></div>
                 <div class="legend-tip">
                     <span><span class="dot green"></span>收入</span>
                     <span><span class="dot red"></span>支出</span>
@@ -377,7 +460,7 @@
                 <div id="chartCategory" class="chart-container"></div>
             </div>
             <div class="chart-box">
-                <div class="chart-title">🏷️ 小类分布</div>
+                <div class="chart-title">🏷️ 小类分布<span class="chart-title-month" id="titleMonth2"></span></div>
                 <div class="legend-tip">
                     <span><span class="dot green"></span>收入</span>
                     <span><span class="dot red"></span>支出</span>
@@ -385,7 +468,7 @@
                 <div id="chartSubcategory" class="chart-container"></div>
             </div>
             <div class="chart-box">
-                <div class="chart-title">📈 月度趋势</div>
+                <div class="chart-title">📈 每日趋势<span class="chart-title-month" id="titleMonth3"></span></div>
                 <div class="legend-tip">
                     <span style="display:inline-flex;align-items:center;gap:4px;">
                         <span style="display:inline-block;width:20px;height:3px;background:#2d7aff;"></span> 收入
@@ -485,6 +568,15 @@
     <script>
         const API_URL = '/api/notion';
         const FORCED_SAVING_RATE = 0.20;
+        const FIXED_RATE = 0.10;
+
+        // 缓存全部记录，切换月份时不用重新请求接口
+        let allRecords = [];
+
+        // 当前查看的年月（月份为 1-12，和 input[type=month] 一致）
+        const now = new Date();
+        let viewYear = now.getFullYear();
+        let viewMonth = now.getMonth() + 1;
 
         const modalOverlay = document.getElementById('modalOverlay');
         const formDate = document.getElementById('formDate');
@@ -495,6 +587,52 @@
         const formAccount = document.getElementById('formAccount');
         const formNote = document.getElementById('formNote');
         const entryForm = document.getElementById('entryForm');
+        const monthPicker = document.getElementById('monthPicker');
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        function monthValue(y, m) { return `${y}-${pad2(m)}`; }
+        function monthLabel(y, m) { return `${y}年${pad2(m)}月`; }
+
+        function syncMonthPicker() {
+            monthPicker.value = monthValue(viewYear, viewMonth);
+            const label = `（${monthLabel(viewYear, viewMonth)}）`;
+            document.getElementById('titleMonth1').textContent = label;
+            document.getElementById('titleMonth2').textContent = label;
+            document.getElementById('titleMonth3').textContent = label;
+            document.getElementById('monthIncomeSub').textContent = monthLabel(viewYear, viewMonth) + ' 收入合计';
+            document.getElementById('monthExpenseSub').textContent = monthLabel(viewYear, viewMonth) + ' 支出合计';
+        }
+
+        monthPicker.addEventListener('change', () => {
+            const [y, m] = monthPicker.value.split('-').map(Number);
+            if (!y || !m) return;
+            viewYear = y;
+            viewMonth = m;
+            syncMonthPicker();
+            renderAll(allRecords);
+        });
+
+        document.getElementById('prevMonth').addEventListener('click', () => {
+            viewMonth -= 1;
+            if (viewMonth < 1) { viewMonth = 12; viewYear -= 1; }
+            syncMonthPicker();
+            renderAll(allRecords);
+        });
+
+        document.getElementById('nextMonth').addEventListener('click', () => {
+            viewMonth += 1;
+            if (viewMonth > 12) { viewMonth = 1; viewYear += 1; }
+            syncMonthPicker();
+            renderAll(allRecords);
+        });
+
+        document.getElementById('thisMonthBtn').addEventListener('click', () => {
+            const n = new Date();
+            viewYear = n.getFullYear();
+            viewMonth = n.getMonth() + 1;
+            syncMonthPicker();
+            renderAll(allRecords);
+        });
 
         document.getElementById('addBtn').addEventListener('click', () => {
             formDate.value = new Date().toISOString().split('T')[0];
@@ -549,6 +687,11 @@
                 if (!result.success) throw new Error(result.error);
                 alert('✅ 记账成功');
                 modalOverlay.classList.remove('active');
+                // 记完账自动跳到那条记录所在月份，并强制刷新
+                const d = new Date(data.date);
+                viewYear = d.getFullYear();
+                viewMonth = d.getMonth() + 1;
+                syncMonthPicker();
                 loadData();
             } catch (err) {
                 alert('❌ ' + err.message);
@@ -560,21 +703,17 @@
 
         async function fetchData() {
             const res = await fetch(API_URL);
-            if (!res.ok) throw new Error('请求失败');
+            if (!res.ok) throw new Error('请求失败 (' + res.status + ')');
             const result = await res.json();
             if (!result.success) throw new Error(result.error);
             return result.data;
         }
 
-        function processRecords(records) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = now.getMonth();
-
+        function processRecords(records, year, month) {
             const monthRecords = records.filter(r => {
                 if (!r.date) return false;
                 const d = new Date(r.date);
-                return d.getFullYear() === year && d.getMonth() === month;
+                return d.getFullYear() === year && (d.getMonth() + 1) === month;
             });
 
             let totalIncome = 0,
@@ -610,14 +749,17 @@
                 }
             }
 
-            const monthAvailable = monthIncome - monthIncome * FORCED_SAVING_RATE - monthIncome * 0.10;
+            const monthAvailable = monthIncome - monthIncome * FORCED_SAVING_RATE - monthIncome * FIXED_RATE;
             const monthBalance = monthAvailable - monthExpense;
 
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const today = now.getDate();
+            // 如果查看的是当前自然月，只画到今天；否则画完整一个月
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth() + 1);
+            const lastDay = isCurrentMonth ? Math.min(daysInMonth, now.getDate()) : daysInMonth;
+
             const dateList = [];
-            for (let d = 1; d <= Math.min(daysInMonth, today); d++) {
-                dateList.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+            for (let d = 1; d <= lastDay; d++) {
+                dateList.push(`${year}-${pad2(month)}-${pad2(d)}`);
             }
 
             let cumBalance = 0;
@@ -653,10 +795,12 @@
             el.className = 'stat-value ' + (s.monthBalance >= 0 ? 'positive' : 'negative');
         }
 
-        function renderPie(domId, incomeData, expenseData) {
+        let pieCategoryChart, pieSubcategoryChart, trendChart;
+
+        function renderPie(domId, incomeData, expenseData, existing) {
             const dom = document.getElementById(domId);
-            if (!dom) return;
-            const chart = echarts.init(dom);
+            if (!dom) return existing;
+            const chart = existing || echarts.init(dom);
             const data = [];
             for (const [k, v] of Object.entries(incomeData)) {
                 if (v > 0) data.push({ name: k + ' (收入)', value: v, itemStyle: { borderColor: '#22a67e', borderWidth: 3 } });
@@ -668,11 +812,13 @@
             if (data.length === 0) {
                 chart.setOption({
                     title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
-                            fontSize: 14, fontWeight: 400 } }
-                });
-                return;
+                            fontSize: 14, fontWeight: 400 } },
+                    series: [{ type: 'pie', data: [] }]
+                }, true);
+                return chart;
             }
             chart.setOption({
+                title: { text: '' },
                 tooltip: { trigger: 'item', formatter: '{b}<br/>¥{c} ({d}%)' },
                 series: [{
                     type: 'pie',
@@ -684,22 +830,25 @@
                 color: ['#2d7aff', '#4a8aff', '#6b9cff', '#8fb0ff', '#b3c8ff',
                     '#ff6b6b', '#ff8a8a', '#ffa8a8', '#ffc8c8', '#ffe0e0'
                 ],
-            });
-            window.addEventListener('resize', () => chart.resize());
+            }, true);
+            return chart;
         }
 
-        function renderTrend(domId, trendData) {
+        function renderTrend(domId, trendData, existing) {
             const dom = document.getElementById(domId);
-            if (!dom) return;
-            const chart = echarts.init(dom);
+            if (!dom) return existing;
+            const chart = existing || echarts.init(dom);
             if (trendData.length === 0) {
                 chart.setOption({
                     title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
-                            fontSize: 14, fontWeight: 400 } }
-                });
-                return;
+                            fontSize: 14, fontWeight: 400 } },
+                    xAxis: { data: [] },
+                    series: []
+                }, true);
+                return chart;
             }
             chart.setOption({
+                title: { text: '' },
                 tooltip: { trigger: 'axis' },
                 legend: { data: ['收入', '支出', '累计结余'], bottom: 0, left: 'center' },
                 grid: { left: 50, right: 20, top: 20, bottom: 50 },
@@ -727,8 +876,21 @@
                     smooth: true,
                     lineStyle: { color: '#22a67e', width: 2, type: 'dashed' },
                 }],
-            });
-            window.addEventListener('resize', () => chart.resize());
+            }, true);
+            return chart;
+        }
+
+        function renderAll(records) {
+            const stats = processRecords(records, viewYear, viewMonth);
+            renderStats(stats);
+            pieCategoryChart = renderPie('chartCategory', stats.categoryIncome, stats.categoryExpense, pieCategoryChart);
+            pieSubcategoryChart = renderPie('chartSubcategory', stats.subcategoryIncome, stats.subcategoryExpense, pieSubcategoryChart);
+            trendChart = renderTrend('chartTrend', stats.trend, trendChart);
+
+            const dot = document.getElementById('statusDot');
+            const txt = document.getElementById('statusText');
+            dot.className = 'dot success';
+            txt.textContent = '✅ 共 ' + records.length + ' 条记录，本月 ' + stats.recordCount + ' 条';
         }
 
         async function loadData() {
@@ -737,21 +899,23 @@
             try {
                 dot.className = 'dot loading';
                 txt.textContent = '加载中...';
-                const records = await fetchData();
-                const stats = processRecords(records);
-                renderStats(stats);
-                renderPie('chartCategory', stats.categoryIncome, stats.categoryExpense);
-                renderPie('chartSubcategory', stats.subcategoryIncome, stats.subcategoryExpense);
-                renderTrend('chartTrend', stats.trend);
-                dot.className = 'dot success';
-                txt.textContent = '✅ ' + stats.recordCount + ' 条记录';
+                allRecords = await fetchData();
+                renderAll(allRecords);
             } catch (err) {
                 dot.className = 'dot error';
                 txt.textContent = '❌ ' + err.message;
             }
         }
 
+        window.addEventListener('resize', () => {
+            pieCategoryChart && pieCategoryChart.resize();
+            pieSubcategoryChart && pieSubcategoryChart.resize();
+            trendChart && trendChart.resize();
+        });
+
         document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+        syncMonthPicker();
         loadData();
     </script>
 </body>
