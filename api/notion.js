@@ -1,77 +1,150 @@
+// /api/notion.js
+// Vercel Serverless Function：读取 / 写入 Notion 数据库
+//
+// 需要的环境变量（在 Vercel 项目的 Settings -> Environment Variables 里配置）：
+//   NOTION_API_KEY      - Notion Integration 的 Secret
+//   NOTION_DATABASE_ID  - 目标数据库的 ID
+//
+// 需要的依赖（package.json）：
+//   { "dependencies": { "@notionhq/client": "^2.2.15" } }
+//
+// Notion 数据库里需要有这些属性（名称必须完全一致，类型见括号）：
+//   日期     (Date)
+//   金额     (Number)
+//   收支类型 (Select: 收入 / 支出)
+//   大类     (Select)
+//   小类     (Select)
+//   账户     (Select)
+//   备注     (Text / Rich text)
+
 const { Client } = require('@notionhq/client');
 
-const NOTION_API_KEY = process.env.NOTION_API_KEY || 'your_notion_api_key';
-const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID || 'your_database_id';
+const NOTION_API_KEY = process.env.NOTION_API_KEY;
+const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
-module.exports = async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+const notion = new Client({ auth: NOTION_API_KEY });
 
-    if (req.method === 'OPTIONS') return res.status(200).end();
-
-    const notion = new Client({ auth: NOTION_API_KEY });
-
-    try {
-        if (req.method === 'GET') {
-            const response = await notion.databases.query({
-                database_id: NOTION_DATABASE_ID,
-                sorts: [{ property: 'Date', direction: 'descending' }],
-            });
-
-            const records = response.results.map(page => {
-                const p = page.properties;
-                return {
-                    id: page.id,
-                    date: p.Date?.date?.start || '',
-                    amount: p['#金额']?.number || 0,
-                    type: p['收支类型']?.select?.name || '',
-                    category: p['大类']?.select?.name || '',
-                    subcategory: p['小类']?.select?.name || '',
-                    account: p['账户']?.select?.name || '',
-                    note: p['备注']?.rich_text?.map(t => t.plain_text).join('') || '',
-                };
-            });
-            return res.status(200).json({ success: true, data: records });
-        }
-
-        if (req.method === 'POST') {
-            const { date, amount, type, category, subcategory, account, note } = req.body;
-
-            if (!date || !amount || !type) {
-                return res.status(400).json({ success: false, error: '请填写日期、金额和收支类型' });
-            }
-
-            const newPage = {
-                parent: { database_id: NOTION_DATABASE_ID },
-                properties: {
-                    'Date': { date: { start: date } },
-                    '#金额': { number: parseFloat(amount) },
-                    '收支类型': { select: { name: type } },
-                },
-            };
-
-            if (category) {
-                newPage.properties['大类'] = { select: { name: category } };
-            }
-            if (subcategory) {
-                newPage.properties['小类'] = { select: { name: subcategory } };
-            }
-            if (account) {
-                newPage.properties['账户'] = { select: { name: account } };
-            }
-            if (note) {
-                newPage.properties['备注'] = { rich_text: [{ text: { content: note } }] };
-            }
-
-            await notion.pages.create(newPage);
-            return res.status(200).json({ success: true, message: '记账成功' });
-        }
-
-        return res.status(405).json({ success: false, error: 'Method not allowed' });
-
-    } catch (error) {
-        console.error('Notion API Error:', error);
-        return res.status(500).json({ success: false, error: error.message });
-    }
+const PROP = {
+  date: '日期',
+  amount: '金额',
+  type: '收支类型',
+  category: '大类',
+  subcategory: '小类',
+  account: '账户',
+  note: '备注',
 };
+
+module.exports = async function handler(req, res) {
+  // 简单 CORS 支持（如果前端和这个函数不是同域部署，需要这个）
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (!NOTION_API_KEY || !DATABASE_ID) {
+    return res.status(500).json({
+      success: false,
+      error: '缺少环境变量 NOTION_API_KEY 或 NOTION_DATABASE_ID，请在 Vercel 项目设置中配置',
+    });
+  }
+
+  try {
+    if (req.method === 'GET') {
+      const records = await queryAllRecords();
+      return res.status(200).json({ success: true, data: records });
+    }
+
+    if (req.method === 'POST') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const { date, amount, type, category, subcategory, account, note } = body || {};
+
+      if (!date || amount === undefined || amount === null || !type) {
+        return res.status(400).json({ success: false, error: '缺少必填字段：日期 / 金额 / 收支类型' });
+      }
+      const numericAmount = Number(amount);
+      if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ success: false, error: '金额必须是大于 0 的数字' });
+      }
+      if (type !== '收入' && type !== '支出') {
+        return res.status(400).json({ success: false, error: '收支类型必须是 "收入" 或 "支出"' });
+      }
+
+      const properties = {
+        [PROP.date]: { date: { start: date } },
+        [PROP.amount]: { number: numericAmount },
+        [PROP.type]: { select: { name: type } },
+      };
+      if (category) properties[PROP.category] = { select: { name: category } };
+      if (subcategory) properties[PROP.subcategory] = { select: { name: subcategory } };
+      if (account) properties[PROP.account] = { select: { name: account } };
+      if (note) properties[PROP.note] = { rich_text: [{ text: { content: String(note).slice(0, 2000) } }] };
+
+      const page = await notion.pages.create({
+        parent: { database_id: DATABASE_ID },
+        properties,
+      });
+
+      return res.status(200).json({ success: true, id: page.id });
+    }
+
+    res.setHeader('Allow', ['GET', 'POST', 'OPTIONS']);
+    return res.status(405).json({ success: false, error: `不支持的请求方法: ${req.method}` });
+  } catch (err) {
+    console.error('Notion API error:', err);
+    return res.status(500).json({
+      success: false,
+      error: err && err.message ? err.message : '服务器内部错误',
+    });
+  }
+};
+
+// 拉取数据库里所有记录（自动翻页，Notion 每页最多 100 条）
+async function queryAllRecords() {
+  let results = [];
+  let cursor = undefined;
+
+  do {
+    const response = await notion.databases.query({
+      database_id: DATABASE_ID,
+      start_cursor: cursor,
+      page_size: 100,
+      sorts: [{ property: PROP.date, direction: 'ascending' }],
+    });
+    results = results.concat(response.results);
+    cursor = response.has_more ? response.next_cursor : undefined;
+  } while (cursor);
+
+  return results.map(mapPageToRecord).filter((r) => r.date);
+}
+
+// 把 Notion 的 page 对象映射成前端需要的简单结构
+function mapPageToRecord(page) {
+  const p = page.properties || {};
+  return {
+    id: page.id,
+    date: getDate(p[PROP.date]),
+    amount: getNumber(p[PROP.amount]),
+    type: getSelect(p[PROP.type]),
+    category: getSelect(p[PROP.category]),
+    subcategory: getSelect(p[PROP.subcategory]),
+    account: getSelect(p[PROP.account]),
+    note: getRichText(p[PROP.note]),
+  };
+}
+
+function getDate(prop) {
+  return prop && prop.date && prop.date.start ? prop.date.start : null;
+}
+function getNumber(prop) {
+  return prop && typeof prop.number === 'number' ? prop.number : 0;
+}
+function getSelect(prop) {
+  return prop && prop.select && prop.select.name ? prop.select.name : '';
+}
+function getRichText(prop) {
+  if (!prop || !Array.isArray(prop.rich_text)) return '';
+  return prop.rich_text.map((t) => t.plain_text).join('');
+}
