@@ -1,21 +1,5 @@
 // /api/notion.js
 // Vercel Serverless Function：读取 / 写入 Notion 数据库
-//
-// 需要的环境变量（在 Vercel 项目的 Settings -> Environment Variables 里配置）：
-//   NOTION_API_KEY      - Notion Integration 的 Secret
-//   NOTION_DATABASE_ID  - 目标数据库的 ID
-//
-// 需要的依赖（package.json）：
-//   { "dependencies": { "@notionhq/client": "^2.2.15" } }
-//
-// Notion 数据库里需要有这些属性（名称必须完全一致，类型见括号）：
-//   日期     (Date)
-//   金额     (Number)
-//   收支类型 (Select: 收入 / 支出)
-//   大类     (Select)
-//   小类     (Select)
-//   账户     (Select)
-//   备注     (Text / Rich text)
 
 const { Client } = require('@notionhq/client');
 
@@ -24,18 +8,19 @@ const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 const notion = new Client({ auth: NOTION_API_KEY });
 
+// ============ 字段映射（按你的数据库实际名称） ============
 const PROP = {
-  date: '日期',
-  amount: '金额',
+  date: 'Date',          // ← 改回 Date（不是"日期"）
+  amount: '#金额',       // ← 确认是 #金额 还是 金额
   type: '收支类型',
   category: '大类',
   subcategory: '小类',
   account: '账户',
   note: '备注',
 };
+// ========================================================
 
 module.exports = async function handler(req, res) {
-  // 简单 CORS 支持（如果前端和这个函数不是同域部署，需要这个）
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -101,7 +86,6 @@ module.exports = async function handler(req, res) {
   }
 };
 
-// 拉取数据库里所有记录（自动翻页，Notion 每页最多 100 条）
 async function queryAllRecords() {
   let results = [];
   let cursor = undefined;
@@ -120,7 +104,6 @@ async function queryAllRecords() {
   return results.map(mapPageToRecord).filter((r) => r.date);
 }
 
-// 把 Notion 的 page 对象映射成前端需要的简单结构
 function mapPageToRecord(page) {
   const p = page.properties || {};
   return {
