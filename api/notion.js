@@ -1,4 +1,3 @@
-// api/notion.js
 const { Client } = require('@notionhq/client');
 
 const NOTION_API_KEY = process.env.NOTION_API_KEY || 'your_notion_api_key';
@@ -14,7 +13,6 @@ module.exports = async (req, res) => {
     const notion = new Client({ auth: NOTION_API_KEY });
 
     try {
-        // GET：查询
         if (req.method === 'GET') {
             const response = await notion.databases.query({
                 database_id: NOTION_DATABASE_ID,
@@ -26,10 +24,10 @@ module.exports = async (req, res) => {
                 return {
                     id: page.id,
                     date: p.Date?.date?.start || '',
-                    amount: p['金额']?.number || 0,
+                    amount: p['#金额']?.number || 0,
                     type: p['收支类型']?.select?.name || '',
-                    category: p['大类']?.select?.name || '未分类',
-                    subcategory: p['小类']?.select?.name || '未分类',
+                    category: p['大类']?.select?.name || '',
+                    subcategory: p['小类']?.select?.name || '',
                     account: p['账户']?.select?.name || '',
                     note: p['备注']?.rich_text?.map(t => t.plain_text).join('') || '',
                 };
@@ -37,7 +35,6 @@ module.exports = async (req, res) => {
             return res.status(200).json({ success: true, data: records });
         }
 
-        // POST：新增
         if (req.method === 'POST') {
             const { date, amount, type, category, subcategory, account, note } = req.body;
 
@@ -49,15 +46,15 @@ module.exports = async (req, res) => {
                 parent: { database_id: NOTION_DATABASE_ID },
                 properties: {
                     'Date': { date: { start: date } },
-                    '金额': { number: parseFloat(amount) },
+                    '#金额': { number: parseFloat(amount) },
                     '收支类型': { select: { name: type } },
                 },
             };
 
-            if (category && category !== '未分类') {
+            if (category) {
                 newPage.properties['大类'] = { select: { name: category } };
             }
-            if (subcategory && subcategory !== '未分类') {
+            if (subcategory) {
                 newPage.properties['小类'] = { select: { name: subcategory } };
             }
             if (account) {
