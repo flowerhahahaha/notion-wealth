@@ -1,6 +1,4 @@
 // /api/notion.js
-// Vercel Serverless Function：读取 / 写入 Notion 数据库
-
 const { Client } = require('@notionhq/client');
 
 const NOTION_API_KEY = process.env.NOTION_API_KEY;
@@ -8,17 +6,15 @@ const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 const notion = new Client({ auth: NOTION_API_KEY });
 
-// ============ 字段映射（按你的数据库实际名称） ============
 const PROP = {
-  date: 'Date',          // ← 改回 Date（不是"日期"）
-  amount: '#金额',       // ← 确认是 #金额 还是 金额
+  date: 'Date',
+  amount: '金额',
   type: '收支类型',
   category: '大类',
   subcategory: '小类',
   account: '账户',
   note: '备注',
 };
-// ========================================================
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,7 +28,7 @@ module.exports = async function handler(req, res) {
   if (!NOTION_API_KEY || !DATABASE_ID) {
     return res.status(500).json({
       success: false,
-      error: '缺少环境变量 NOTION_API_KEY 或 NOTION_DATABASE_ID，请在 Vercel 项目设置中配置',
+      error: '缺少环境变量 NOTION_API_KEY 或 NOTION_DATABASE_ID',
     });
   }
 
@@ -58,7 +54,7 @@ module.exports = async function handler(req, res) {
       }
 
       const properties = {
-        [PROP.date]: { date: { start: date } },
+        [PROP.date]: { title: [{ text: { content: date } }] },
         [PROP.amount]: { number: numericAmount },
         [PROP.type]: { select: { name: type } },
       };
@@ -108,7 +104,7 @@ function mapPageToRecord(page) {
   const p = page.properties || {};
   return {
     id: page.id,
-    date: getDate(p[PROP.date]),
+    date: getTitle(p[PROP.date]),
     amount: getNumber(p[PROP.amount]),
     type: getSelect(p[PROP.type]),
     category: getSelect(p[PROP.category]),
@@ -118,15 +114,20 @@ function mapPageToRecord(page) {
   };
 }
 
-function getDate(prop) {
-  return prop && prop.date && prop.date.start ? prop.date.start : null;
+// 关键改动：Date 是 title 类型
+function getTitle(prop) {
+  if (!prop || !Array.isArray(prop.title)) return null;
+  return prop.title.map((t) => t.plain_text).join('') || null;
 }
+
 function getNumber(prop) {
   return prop && typeof prop.number === 'number' ? prop.number : 0;
 }
+
 function getSelect(prop) {
   return prop && prop.select && prop.select.name ? prop.select.name : '';
 }
+
 function getRichText(prop) {
   if (!prop || !Array.isArray(prop.rich_text)) return '';
   return prop.rich_text.map((t) => t.plain_text).join('');
