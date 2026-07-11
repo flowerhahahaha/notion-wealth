@@ -54,7 +54,7 @@ module.exports = async function handler(req, res) {
         return {
           id: page.id,
           date: p.Date?.title?.[0]?.plain_text || null,
-          amount: p['#金额']?.number || 0,
+          amount: p['金额']?.number || 0,
           type: p['收支类型']?.select?.name || '',
           category: p['大类']?.select?.name || '',
           subcategory: p['小类']?.select?.name || '',
