@@ -566,7 +566,7 @@
 
     <script>
         const API_URL = '/api/notion';
-        const FORCED_SAVING_RATE = 0.20;
+        const MONTHLY_SAVING_GOAL = 500 ; 
         const FIXED_RATE = 0.10;
 
         // 缓存全部记录，切换月份时不用重新请求接口
@@ -745,7 +745,7 @@
                 }
             }
 
-            const monthAvailable = monthIncome - monthIncome * FORCED_SAVING_RATE - monthIncome * FIXED_RATE;
+            const monthAvailable = monthIncome - MONTHLY_SAVING_GOAL - monthIncome * FIXED_RATE;
             const monthBalance = monthAvailable - monthExpense;
 
             return {
