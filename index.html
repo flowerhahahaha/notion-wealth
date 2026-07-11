@@ -109,7 +109,6 @@
             }
         }
 
-        /* 工具栏：月份选择 */
         .toolbar {
             display: flex;
             justify-content: space-between;
@@ -613,14 +612,16 @@
 
         document.getElementById('prevMonth').addEventListener('click', () => {
             viewMonth -= 1;
-            if (viewMonth < 1) { viewMonth = 12; viewYear -= 1; }
+            if (viewMonth < 1) { viewMonth = 12;
+                viewYear -= 1; }
             syncMonthPicker();
             renderAll(allRecords);
         });
 
         document.getElementById('nextMonth').addEventListener('click', () => {
             viewMonth += 1;
-            if (viewMonth > 12) { viewMonth = 1; viewYear += 1; }
+            if (viewMonth > 12) { viewMonth = 1;
+                viewYear += 1; }
             syncMonthPicker();
             renderAll(allRecords);
         });
@@ -704,8 +705,8 @@
             const res = await fetch(API_URL);
             if (!res.ok) throw new Error('请求失败 (' + res.status + ')');
             const result = await res.json();
-            if (!result.success) throw new Error(result.error);
-            return result.data;
+            if (!result.success) throw new Error(result.error || '未知错误');
+            return result.data || [];
         }
 
         function processRecords(records, year, month) {
@@ -761,12 +762,12 @@
             };
         }
 
-        // 按月聚合全部记录，用于"月度趋势"图（不受月份选择器的当月过滤影响，
-        // 而是以选中的月份作为窗口终点，往前展示最近 windowSize 个月）
+        // 按月聚合全部记录，用于"月度趋势"图
         function buildMonthlyTrend(records, endYear, endMonth, windowSize) {
             windowSize = windowSize || 12;
             if (!records || records.length === 0) return [];
 
+            // 找到最早的一条记录
             let minDate = null;
             for (const r of records) {
                 if (!r.date) continue;
@@ -778,18 +779,21 @@
             const startYear = minDate.getFullYear();
             const startMonth = minDate.getMonth() + 1;
 
-            // 从最早一条记录所在月份，一直推到选中的月份，生成连续的月份列表（没数据的月份补 0）
+            // 从最早记录所在月份到选中月份，生成月份列表
             const monthList = [];
-            let y = startYear, m = startMonth;
+            let y = startYear,
+                m = startMonth;
             let safety = 0;
             while ((y < endYear || (y === endYear && m <= endMonth)) && safety < 1200) {
                 monthList.push({ year: y, month: m });
                 m += 1;
-                if (m > 12) { m = 1; y += 1; }
+                if (m > 12) { m = 1;
+                    y += 1; }
                 safety += 1;
             }
             if (monthList.length === 0) return [];
 
+            // 按月份聚合收入/支出
             const monthMap = {};
             for (const r of records) {
                 if (!r.date) continue;
@@ -809,6 +813,7 @@
                 return { year, month, label: `${year}-${pad2(month)}`, income, expense, cumBalance };
             });
 
+            // 取最近 windowSize 个月
             return full.slice(-windowSize);
         }
 
@@ -824,99 +829,167 @@
 
         let pieCategoryChart, pieSubcategoryChart, trendChart;
 
+        // 安全渲染饼图 - 修复 coordinateSystem 错误
         function renderPie(domId, incomeData, expenseData, existing) {
             const dom = document.getElementById(domId);
             if (!dom) return existing;
-            const chart = existing || echarts.init(dom);
-            const data = [];
-            for (const [k, v] of Object.entries(incomeData)) {
-                if (v > 0) data.push({ name: k + ' (收入)', value: v, itemStyle: { borderColor: '#22a67e', borderWidth: 3 } });
-            }
-            for (const [k, v] of Object.entries(expenseData)) {
-                if (v > 0) data.push({ name: k + ' (支出)', value: v, itemStyle: { borderColor: '#d1453b', borderWidth: 3 } });
-            }
 
-            if (data.length === 0) {
+            try {
+                const chart = existing || echarts.init(dom);
+                const data = [];
+
+                // 安全遍历 incomeData
+                if (incomeData && typeof incomeData === 'object') {
+                    for (const [k, v] of Object.entries(incomeData)) {
+                        if (v > 0) {
+                            data.push({ name: k + ' (收入)', value: v, itemStyle: { borderColor: '#22a67e', borderWidth: 3 } });
+                        }
+                    }
+                }
+
+                // 安全遍历 expenseData
+                if (expenseData && typeof expenseData === 'object') {
+                    for (const [k, v] of Object.entries(expenseData)) {
+                        if (v > 0) {
+                            data.push({ name: k + ' (支出)', value: v, itemStyle: { borderColor: '#d1453b', borderWidth: 3 } });
+                        }
+                    }
+                }
+
+                if (data.length === 0) {
+                    chart.setOption({
+                        title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
+                                fontSize: 14, fontWeight: 400 } },
+                        series: [{ type: 'pie', data: [] }]
+                    }, true);
+                    return chart;
+                }
+
                 chart.setOption({
-                    title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
-                            fontSize: 14, fontWeight: 400 } },
-                    series: [{ type: 'pie', data: [] }]
+                    title: { text: '' },
+                    tooltip: { trigger: 'item', formatter: '{b}<br/>¥{c} ({d}%)' },
+                    series: [{
+                        type: 'pie',
+                        radius: ['40%', '68%'],
+                        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                        label: { show: true, formatter: '{b}\n¥{c}', fontSize: 11 },
+                        data: data,
+                    }],
+                    color: ['#2d7aff', '#4a8aff', '#6b9cff', '#8fb0ff', '#b3c8ff',
+                        '#ff6b6b', '#ff8a8a', '#ffa8a8', '#ffc8c8', '#ffe0e0'
+                    ],
                 }, true);
                 return chart;
+            } catch (e) {
+                console.warn('renderPie error:', e);
+                return existing;
             }
-            chart.setOption({
-                title: { text: '' },
-                tooltip: { trigger: 'item', formatter: '{b}<br/>¥{c} ({d}%)' },
-                series: [{
-                    type: 'pie',
-                    radius: ['40%', '68%'],
-                    itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-                    label: { show: true, formatter: '{b}\n¥{c}', fontSize: 11 },
-                    data: data,
-                }],
-                color: ['#2d7aff', '#4a8aff', '#6b9cff', '#8fb0ff', '#b3c8ff',
-                    '#ff6b6b', '#ff8a8a', '#ffa8a8', '#ffc8c8', '#ffe0e0'
-                ],
-            }, true);
-            return chart;
         }
 
+        // 安全渲染趋势图 - 修复 coordinateSystem 错误
         function renderTrend(domId, trendData, existing) {
             const dom = document.getElementById(domId);
             if (!dom) return existing;
-            const chart = existing || echarts.init(dom);
-            if (trendData.length === 0) {
+
+            try {
+                const chart = existing || echarts.init(dom);
+
+                // 验证数据
+                if (!trendData || !Array.isArray(trendData) || trendData.length === 0) {
+                    chart.setOption({
+                        title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
+                                fontSize: 14, fontWeight: 400 } },
+                        xAxis: { type: 'category', data: [] },
+                        yAxis: { type: 'value' },
+                        series: []
+                    }, true);
+                    return chart;
+                }
+
+                // 检查是否有任何有效数据
+                const hasData = trendData.some(d => d.income > 0 || d.expense > 0 || d.cumBalance !== 0);
+                if (!hasData) {
+                    chart.setOption({
+                        title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
+                                fontSize: 14, fontWeight: 400 } },
+                        xAxis: { type: 'category', data: trendData.map(d => d.label || '') },
+                        yAxis: { type: 'value' },
+                        series: []
+                    }, true);
+                    return chart;
+                }
+
                 chart.setOption({
-                    title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#8a9aa8',
-                            fontSize: 14, fontWeight: 400 } },
-                    xAxis: { data: [] },
-                    series: []
+                    title: { text: '' },
+                    tooltip: {
+                        trigger: 'axis',
+                        formatter: function(params) {
+                            if (!params || params.length === 0) return '';
+                            let html = '<strong>' + (params[0].axisValue || '') + '</strong><br/>';
+                            for (const p of params) {
+                                if (p && p.seriesName !== undefined && p.value !== undefined) {
+                                    html += p.marker + ' ' + p.seriesName + ': ¥' + Math.round(p.value) + '<br/>';
+                                }
+                            }
+                            return html;
+                        }
+                    },
+                    legend: { data: ['收入', '支出', '累计结余'], bottom: 0, left: 'center' },
+                    grid: { left: 50, right: 20, top: 20, bottom: 50 },
+                    xAxis: {
+                        type: 'category',
+                        data: trendData.map(d => d.label || ''),
+                        axisLabel: { fontSize: 11 }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        axisLabel: { formatter: '¥{value}', fontSize: 11 },
+                        splitLine: { lineStyle: { color: '#edf2f7', type: 'dashed' } }
+                    },
+                    series: [{
+                        name: '收入',
+                        type: 'line',
+                        data: trendData.map(d => d.income || 0),
+                        smooth: true,
+                        lineStyle: { color: '#2d7aff', width: 2.5 },
+                        areaStyle: { color: 'rgba(45,122,255,0.10)' },
+                    }, {
+                        name: '支出',
+                        type: 'line',
+                        data: trendData.map(d => d.expense || 0),
+                        smooth: true,
+                        lineStyle: { color: '#d1453b', width: 2.5 },
+                        areaStyle: { color: 'rgba(209,69,59,0.08)' },
+                    }, {
+                        name: '累计结余',
+                        type: 'line',
+                        data: trendData.map(d => d.cumBalance || 0),
+                        smooth: true,
+                        lineStyle: { color: '#22a67e', width: 2, type: 'dashed' },
+                    }],
                 }, true);
                 return chart;
+            } catch (e) {
+                console.warn('renderTrend error:', e);
+                return existing;
             }
-            chart.setOption({
-                title: { text: '' },
-                tooltip: { trigger: 'axis' },
-                legend: { data: ['收入', '支出', '累计结余'], bottom: 0, left: 'center' },
-                grid: { left: 50, right: 20, top: 20, bottom: 50 },
-                xAxis: { type: 'category', data: trendData.map(d => d.label) },
-                yAxis: { type: 'value', axisLabel: { formatter: '¥{value}' }, splitLine: { lineStyle: { color: '#edf2f7',
-                            type: 'dashed' } } },
-                series: [{
-                    name: '收入',
-                    type: 'line',
-                    data: trendData.map(d => d.income),
-                    smooth: true,
-                    lineStyle: { color: '#2d7aff', width: 2.5 },
-                    areaStyle: { color: 'rgba(45,122,255,0.10)' },
-                }, {
-                    name: '支出',
-                    type: 'line',
-                    data: trendData.map(d => d.expense),
-                    smooth: true,
-                    lineStyle: { color: '#d1453b', width: 2.5 },
-                    areaStyle: { color: 'rgba(209,69,59,0.08)' },
-                }, {
-                    name: '累计结余',
-                    type: 'line',
-                    data: trendData.map(d => d.cumBalance),
-                    smooth: true,
-                    lineStyle: { color: '#22a67e', width: 2, type: 'dashed' },
-                }],
-            }, true);
-            return chart;
         }
 
         function renderAll(records) {
             const stats = processRecords(records, viewYear, viewMonth);
             renderStats(stats);
-            pieCategoryChart = renderPie('chartCategory', stats.categoryIncome, stats.categoryExpense, pieCategoryChart);
-            pieSubcategoryChart = renderPie('chartSubcategory', stats.subcategoryIncome, stats.subcategoryExpense, pieSubcategoryChart);
 
+            // 安全渲染饼图
+            pieCategoryChart = renderPie('chartCategory', stats.categoryIncome, stats.categoryExpense, pieCategoryChart);
+            pieSubcategoryChart = renderPie('chartSubcategory', stats.subcategoryIncome, stats.subcategoryExpense,
+                pieSubcategoryChart);
+
+            // 月度趋势
             const monthlyTrend = buildMonthlyTrend(records, viewYear, viewMonth, 12);
             trendChart = renderTrend('chartTrend', monthlyTrend, trendChart);
+
             const titleMonth3 = document.getElementById('titleMonth3');
-            if (monthlyTrend.length > 0) {
+            if (monthlyTrend && monthlyTrend.length > 0) {
                 titleMonth3.textContent = `（${monthlyTrend[0].label} ~ ${monthlyTrend[monthlyTrend.length - 1].label}）`;
             } else {
                 titleMonth3.textContent = '';
@@ -925,7 +998,7 @@
             const dot = document.getElementById('statusDot');
             const txt = document.getElementById('statusText');
             dot.className = 'dot success';
-            txt.textContent = '✅ 共 ' + records.length + ' 条记录，本月 ' + stats.recordCount + ' 条';
+            txt.textContent = '✅ 共 ' + (records ? records.length : 0) + ' 条记录，本月 ' + (stats.recordCount || 0) + ' 条';
         }
 
         async function loadData() {
@@ -934,18 +1007,24 @@
             try {
                 dot.className = 'dot loading';
                 txt.textContent = '加载中...';
-                allRecords = await fetchData();
+                const data = await fetchData();
+                allRecords = data || [];
                 renderAll(allRecords);
             } catch (err) {
                 dot.className = 'dot error';
                 txt.textContent = '❌ ' + err.message;
+                console.error('loadData error:', err);
             }
         }
 
         window.addEventListener('resize', () => {
-            pieCategoryChart && pieCategoryChart.resize();
-            pieSubcategoryChart && pieSubcategoryChart.resize();
-            trendChart && trendChart.resize();
+            try {
+                pieCategoryChart && pieCategoryChart.resize();
+                pieSubcategoryChart && pieSubcategoryChart.resize();
+                trendChart && trendChart.resize();
+            } catch (e) {
+                // ignore resize errors
+            }
         });
 
         document.getElementById('refreshBtn').addEventListener('click', loadData);
