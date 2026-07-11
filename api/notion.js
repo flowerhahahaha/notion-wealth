@@ -8,7 +8,7 @@ const notion = new Client({ auth: NOTION_API_KEY });
 
 const PROP = {
   date: 'Date',
-  amount: '#金额',
+  amount: '金额',
   type: '收支类型',
   category: '大类',
   subcategory: '小类',
