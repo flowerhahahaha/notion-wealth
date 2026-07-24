@@ -1026,33 +1026,32 @@
 
         // ========== 账户统计 ==========
         function calculateAccountStats(records) {
-            const accountBalance = {};
+    const accountBalance = {};
 
-            for (const r of records) {
-                // 使用 shouldAffectAccount 判断是否影响账户
-                if (!shouldAffectAccount(r)) continue;
+    for (const r of records) {
+        if (!shouldAffectAccount(r)) continue;
 
-                if (r.isTransfer) {
-                    // 转账：从转出账户扣钱，转入账户加钱
-                    if (r.fromAccount) {
-                        accountBalance[r.fromAccount] = (accountBalance[r.fromAccount] || 0) - r.amount;
-                    }
-                    if (r.toAccount) {
-                        accountBalance[r.toAccount] = (accountBalance[r.toAccount] || 0) + r.amount;
-                    }
-                } else if (r.type === '收入') {
-                    if (r.account) {
-                        accountBalance[r.account] = (accountBalance[r.account] || 0) + r.amount;
-                    }
-                } else if (r.type === '支出') {
-                    if (r.account) {
-                        accountBalance[r.account] = (accountBalance[r.account] || 0) - r.amount;
-                    }
-                }
+        if (r.isTransfer) {
+            // 转账：从转出账户扣钱，转入账户加钱
+            if (r.fromAccount) {
+                accountBalance[r.fromAccount] = (accountBalance[r.fromAccount] || 0) - r.amount;
             }
-
-            return accountBalance;
+            if (r.toAccount) {
+                accountBalance[r.toAccount] = (accountBalance[r.toAccount] || 0) + r.amount;
+            }
+        } else if (r.type === '收入') {
+            if (r.account) {
+                accountBalance[r.account] = (accountBalance[r.account] || 0) + r.amount;
+            }
+        } else if (r.type === '支出') {
+            if (r.account) {
+                accountBalance[r.account] = (accountBalance[r.account] || 0) - r.amount;
+            }
         }
+    }
+
+    return accountBalance;
+}
 
         // ========== 月度趋势 ==========
         function buildMonthlyTrend(records, endYear, endMonth, windowSize) {
