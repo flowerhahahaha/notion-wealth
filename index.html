@@ -752,31 +752,78 @@
             document.getElementById('monthExpenseSub').textContent = monthLabel(viewYear, viewMonth) + ' 支出合计';
         }
 
+        // ========== 字段映射函数 ==========
+        /**
+         * 将 Notion 数据映射为标准格式
+         * 支持中英文两种字段名
+         */
+        function mapNotionRecord(r) {
+            return {
+                date: r.date || r['日期'] || '',
+                amount: r.amount || r['金额'] || 0,
+                type: r.type || r['收支类型'] || '',
+                category: r.category || r['大类'] || '',
+                subcategory: r.subcategory || r['小类'] || '',
+                note: r.note || r['备注'] || '',
+                isFailure: r.isFailure || r['是否失败消费'] || false,
+                isTransfer: r.isTransfer || r['是否转账'] || false,
+                account: r.account || r['账户'] || '',           // 转入账户
+                fromAccount: r.fromAccount || r['转出账户'] || '', // 转出账户
+            };
+        }
+
+        /**
+         * 将标准格式转换为 Notion 格式（用于提交）
+         */
+        function toNotionFormat(data) {
+            return {
+                '日期': data.date,
+                '金额': data.amount,
+                '收支类型': data.type,
+                '大类': data.category,
+                '小类': data.subcategory,
+                '备注': data.note,
+                '是否失败消费': data.isFailure,
+                '是否转账': data.isTransfer,
+                '账户': data.account,
+                '转出账户': data.fromAccount,
+            };
+        }
+
         // ========== 核心判断函数 ==========
 
         /**
          * 判断是否计入收支统计
+         * 规则：
+         * 1. 转账不计入
+         * 2. 失败消费中"承受型损失"不计入
+         * 3. 失败消费中"追加型损失"计入
+         * 4. 普通收入/支出正常计入
          */
         function shouldCountForStats(record) {
+            // 转账不计入收支
             if (record.isTransfer) return false;
+
+            // 失败消费判断
             if (record.isFailure) {
                 if (record.subcategory === '追加型损失') return true;
                 if (record.subcategory === '承受型损失') return false;
                 return false;
             }
+
             return true;
         }
 
         /**
          * 判断是否应该影响账户余额
-         * 只有"承受型损失"不影响账户余额
+         * 规则：只有"承受型损失"不影响账户余额
          */
         function shouldAffectAccountBalance(record) {
             if (record.isFailure && record.subcategory === '承受型损失') return false;
             return true;
         }
 
-        // ========== 账户余额计算（核心） ==========
+        // ========== 账户余额计算 ==========
 
         function calculateAccountBalances(records) {
             const balances = {};
@@ -789,11 +836,11 @@
                 // account = 转入账户（+）
                 // fromAccount = 转出账户（-）
                 if (r.isTransfer) {
-                    // 转入账户增加（account 字段）
+                    // 转入账户增加
                     if (r.account) {
                         balances[r.account] = (balances[r.account] || 0) + r.amount;
                     }
-                    // 转出账户减少（fromAccount 字段）
+                    // 转出账户减少
                     if (r.fromAccount) {
                         balances[r.fromAccount] = (balances[r.fromAccount] || 0) - r.amount;
                     }
@@ -1281,7 +1328,7 @@
                 return;
             }
 
-            // 构建数据
+            // 构建标准数据
             let data = {
                 date: formDate.value,
                 amount: amount,
@@ -1292,8 +1339,6 @@
 
             if (isTransfer) {
                 // ===== 转账记录 =====
-                // account = 转入账户
-                // fromAccount = 转出账户
                 if (!fromAccount || !toAccount) {
                     alert('请选择转出账户和转入账户');
                     return;
@@ -1308,9 +1353,6 @@
                 data.subcategory = '账户间转账';
                 data.account = toAccount; // 转入账户
                 data.fromAccount = fromAccount; // 转出账户
-
-                // 清空普通账户字段
-                data.account = toAccount;
 
             } else {
                 // ===== 普通记录 =====
@@ -1331,7 +1373,9 @@
                 }
             }
 
-            console.log('提交数据:', data);
+            // 转换为 Notion 格式提交
+            const notionData = toNotionFormat(data);
+            console.log('提交到 Notion 的数据:', notionData);
 
             const btn = document.getElementById('formSubmit');
             btn.textContent = '⏳...';
@@ -1341,7 +1385,7 @@
                 const res = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data),
+                    body: JSON.stringify(notionData),
                 });
                 const result = await res.json();
                 if (!result.success) throw new Error(result.error || '保存失败');
@@ -1379,7 +1423,16 @@
                 dot.className = 'dot loading';
                 txt.textContent = '加载中...';
                 const data = await fetchData();
-                allRecords = data || [];
+
+                // ===== 字段映射：将 Notion 数据转为标准格式 =====
+                allRecords = (data || []).map(mapNotionRecord);
+
+                // 调试：打印映射后的转账记录
+                const transfers = allRecords.filter(r => r.isTransfer);
+                if (transfers.length > 0) {
+                    console.log('✅ 映射后的转账记录:', transfers);
+                }
+
                 renderAll(allRecords);
             } catch (err) {
                 dot.className = 'dot error';
