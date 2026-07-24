@@ -908,15 +908,21 @@
 
         // ========== 数据处理函数 ==========
 
+        // 判断是否应该计入收支统计（排除转账）
         function shouldCountForStats(record) {
-            return !record.isTransfer;
+            // 如果记录标记为转账，不纳入收支统计
+            if (record.isTransfer) return false;
+            // 否则纳入统计
+            return true;
         }
 
+        // 计算各账户余额（包含转账）
         function calculateAccountBalances(records) {
             const balances = {};
 
             for (const r of records) {
                 if (r.isTransfer) {
+                    // 转账：转入账户增加，转出账户减少
                     if (r.account) {
                         balances[r.account] = (balances[r.account] || 0) + r.amount;
                     }
@@ -924,6 +930,7 @@
                         balances[r.fromAccount] = (balances[r.fromAccount] || 0) - r.amount;
                     }
                 } else {
+                    // 普通收支
                     if (r.type === '收入') {
                         if (r.account) {
                             balances[r.account] = (balances[r.account] || 0) + r.amount;
@@ -940,12 +947,14 @@
         }
 
         function processRecords(records, year, month) {
+            // 筛选月份记录
             const monthRecords = records.filter(r => {
                 if (!r.date) return false;
                 const d = new Date(r.date);
                 return d.getFullYear() === year && (d.getMonth() + 1) === month;
             });
 
+            // 计算总资产（所有记录，排除转账）
             let totalIncome = 0,
                 totalExpense = 0;
             for (const r of records) {
@@ -955,6 +964,7 @@
             }
             const totalAssets = totalIncome - totalExpense;
 
+            // 月度统计
             let monthIncome = 0,
                 monthExpense = 0;
             const categoryIncome = {},
@@ -981,6 +991,7 @@
             const monthAvailable = monthIncome - MONTHLY_SAVING_GOAL - monthIncome * FIXED_RATE;
             const monthBalance = monthAvailable - monthExpense;
 
+            // 计算各账户余额
             const accountBalances = calculateAccountBalances(records);
 
             return {
@@ -998,6 +1009,7 @@
             };
         }
 
+        // 按月聚合，用于趋势图
         function buildMonthlyTrend(records, endYear, endMonth, windowSize) {
             windowSize = windowSize || 12;
             if (!records || records.length === 0) return [];
