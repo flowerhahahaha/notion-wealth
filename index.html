@@ -476,7 +476,6 @@
             }
         }
 
-        /* 禁用样式 */
         select:disabled {
             background: #f1f4f8;
             color: #8a9aa8;
@@ -801,16 +800,12 @@
         // ========== 核心判断函数 ==========
 
         function shouldCountForStats(record) {
-            // 转账不计入收支
             if (record.isTransfer) return false;
-
-            // 失败消费判断
             if (record.isFailure) {
                 if (record.subcategory === '追加型损失') return true;
                 if (record.subcategory === '承受型损失') return false;
                 return false;
             }
-
             return true;
         }
 
@@ -827,20 +822,16 @@
             for (const r of records) {
                 if (!shouldAffectAccountBalance(r)) continue;
 
-                // 转账处理
                 if (r.isTransfer) {
-                    // 转入账户增加 (account 字段)
                     if (r.account) {
                         balances[r.account] = (balances[r.account] || 0) + r.amount;
                     }
-                    // 转出账户减少 (fromAccount 字段)
                     if (r.fromAccount) {
                         balances[r.fromAccount] = (balances[r.fromAccount] || 0) - r.amount;
                     }
                     continue;
                 }
 
-                // 收入/支出处理
                 if (r.type === '收入') {
                     if (r.account) {
                         balances[r.account] = (balances[r.account] || 0) + r.amount;
@@ -1187,46 +1178,33 @@
 
         // ========== 表单交互 ==========
 
-        // 转账复选框切换
         formIsTransfer.addEventListener('change', function() {
             if (this.checked) {
-                // 显示转账字段，隐藏普通账户字段
                 transferFields.style.display = 'block';
                 normalAccountFields.style.display = 'none';
-                
-                // 禁用收支类型
                 formType.disabled = true;
                 formType.value = '';
                 typeRequired.textContent = '';
                 typeHint.textContent = '⛔ 转账不需要选择收支类型';
                 typeHint.style.color = '#d1453b';
-                
-                // 清空失败消费相关
                 formIsFailure.checked = false;
                 formCategory.value = '';
                 formSubcategory.value = '';
                 formAccount.value = '';
-                
-                // 清空转出/转入账户
                 formFromAccount.value = '';
                 formToAccount.value = '';
             } else {
-                // 恢复普通记账界面
                 transferFields.style.display = 'none';
                 normalAccountFields.style.display = 'grid';
-                
-                // 启用收支类型
                 formType.disabled = false;
                 typeRequired.textContent = '*';
                 typeHint.textContent = '选择收入或支出';
                 typeHint.style.color = '#8a9aa8';
-                
                 formFromAccount.value = '';
                 formToAccount.value = '';
             }
         });
 
-        // 失败消费复选框切换
         formIsFailure.addEventListener('change', function() {
             if (this.checked && !formIsTransfer.checked) {
                 formCategory.value = '失败消费';
@@ -1239,7 +1217,6 @@
             }
         });
 
-        // 小类改变时自动勾选失败消费
         formSubcategory.addEventListener('change', function() {
             if ((this.value === '承受型损失' || this.value === '追加型损失') && !formIsTransfer.checked) {
                 if (!formIsFailure.checked) {
@@ -1338,7 +1315,6 @@
             };
 
             if (isTransfer) {
-                // ===== 转账：不需要收支类型 =====
                 if (!fromAccount || !toAccount) {
                     alert('请选择转出账户和转入账户');
                     return;
@@ -1351,11 +1327,10 @@
                 data.type = '转账';
                 data.category = '转账';
                 data.subcategory = '账户间转账';
-                data.account = toAccount; // 转入账户
-                data.fromAccount = fromAccount; // 转出账户
+                data.account = toAccount;
+                data.fromAccount = fromAccount;
 
             } else {
-                // ===== 普通记账：必须选择收支类型 =====
                 if (!formType.value) {
                     alert('请选择收支类型');
                     return;
@@ -1371,7 +1346,6 @@
                 data.account = formAccount.value;
                 data.fromAccount = '';
 
-                // 如果是失败消费但没有小类，设置默认
                 if (isFailure && !data.subcategory) {
                     data.subcategory = '追加型损失';
                 }
@@ -1429,7 +1403,6 @@
 
                 allRecords = (data || []).map(mapNotionRecord);
 
-                // 调试
                 const transfers = allRecords.filter(r => r.isTransfer);
                 if (transfers.length > 0) {
                     console.log('✅ 转账记录:', transfers);
