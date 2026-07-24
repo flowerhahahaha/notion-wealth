@@ -543,6 +543,7 @@
                     <span><span class="dot green"></span>收入</span>
                     <span><span class="dot red"></span>支出</span>
                     <span><span class="tag tag-excluded">⚠️ 承受型损失已过滤</span></span>
+                    <span><span class="tag tag-transfer">🔄 转账已过滤</span></span>
                 </div>
                 <div id="chartCategory" class="chart-container"></div>
             </div>
@@ -552,6 +553,7 @@
                     <span><span class="dot green"></span>收入</span>
                     <span><span class="dot red"></span>支出</span>
                     <span><span class="tag tag-excluded">⚠️ 承受型损失已过滤</span></span>
+                    <span><span class="tag tag-transfer">🔄 转账已过滤</span></span>
                 </div>
                 <div id="chartSubcategory" class="chart-container"></div>
             </div>
@@ -687,7 +689,7 @@
                         </div>
                     </div>
                     <div style="font-size:12px;color:#6b7a8f;margin-top:6px;">
-                        💡 转账将自动设置为支出类型，但不会影响收支统计
+                        💡 转账不会影响总资产，只改变各账户余额
                     </div>
                 </div>
 
@@ -743,9 +745,9 @@
             document.getElementById('monthExpenseSub').textContent = monthLabel(viewYear, viewMonth) + ' 支出合计';
         }
 
-        // ========== 核心判断函数：是否应该计入统计 ==========
+        // ========== 核心判断函数：是否应该计入统计（收入/支出） ==========
         function shouldCount(record) {
-            // 转账不计入
+            // 转账不计入收入/支出
             if (record.isTransfer) return false;
             
             // 如果是失败消费
@@ -774,8 +776,14 @@
         formIsTransfer.addEventListener('change', function() {
             if (this.checked) {
                 transferFields.style.display = 'block';
-                formType.value = '支出';
+                // 转账时禁用收支类型选择
                 formType.disabled = true;
+                formType.value = '';
+                // 清空大类小类
+                formCategory.value = '';
+                formSubcategory.value = '';
+                // 清空失败消费勾选
+                formIsFailure.checked = false;
             } else {
                 transferFields.style.display = 'none';
                 formType.disabled = false;
@@ -796,9 +804,9 @@
             }
         });
 
-        // 当小类改变时，如果选择了"承受型损失"，自动勾选失败消费
+        // 当小类改变时，如果选择了"承受型损失"或"追加型损失"，自动勾选失败消费
         formSubcategory.addEventListener('change', function() {
-            if (this.value === '承受型损失' || this.value === '追加型损失') {
+            if ((this.value === '承受型损失' || this.value === '追加型损失') && !formIsTransfer.checked) {
                 if (!formIsFailure.checked) {
                     formIsFailure.checked = true;
                     formCategory.value = '失败消费';
@@ -895,8 +903,12 @@
             let subcategory = formSubcategory.value;
 
             if (isTransfer) {
+                // 转账：不设置类型，用特殊标记
+                type = '转账';
                 category = '转账';
                 subcategory = '账户间转账';
+                // 转账不需要账户字段，使用 fromAccount 和 toAccount
+                account = '';
             }
 
             // 如果勾选了失败消费但没选小类，设置默认
@@ -962,7 +974,7 @@
                 return d.getFullYear() === year && (d.getMonth() + 1) === month;
             });
 
-            // 计算总资产（使用 shouldCount 过滤）
+            // 计算总资产（使用 shouldCount 过滤，转账不影响总资产）
             let totalIncome = 0,
                 totalExpense = 0;
             for (const r of records) {
@@ -1021,6 +1033,7 @@
                 if (!shouldAffectAccount(r)) continue;
 
                 if (r.isTransfer) {
+                    // 转账：从转出账户扣钱，转入账户加钱
                     if (r.fromAccount) {
                         accountBalance[r.fromAccount] = (accountBalance[r.fromAccount] || 0) - r.amount;
                     }
