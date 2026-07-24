@@ -176,7 +176,7 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(6, 1fr);
             gap: 16px;
             margin-bottom: 28px;
         }
@@ -212,6 +212,27 @@
             font-size: 12px;
             color: #8a9aa8;
             margin-top: 4px;
+        }
+        .account-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            font-size: 13px;
+        }
+        .account-item .name {
+            color: #4a5a6e;
+        }
+        .account-item .balance {
+            font-weight: 600;
+        }
+        .account-item .balance.positive {
+            color: #0c8f5e;
+        }
+        .account-item .balance.negative {
+            color: #d1453b;
+        }
+        .account-item .balance.neutral {
+            color: #2d3748;
         }
         .charts-row {
             display: grid;
@@ -359,7 +380,6 @@
             background: #f1f4f8;
         }
 
-        /* 转账专用样式 */
         .transfer-fields {
             background: #f8f9fc;
             border-radius: 12px;
@@ -409,10 +429,13 @@
             .charts-row .chart-box:last-child {
                 grid-column: 1 / -1;
             }
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
         }
         @media (max-width: 800px) {
             .stats-grid {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(2, 1fr);
             }
             .charts-row {
                 grid-template-columns: 1fr;
@@ -429,7 +452,7 @@
         }
         @media (max-width: 500px) {
             .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
+                grid-template-columns: 1fr 1fr;
             }
             .stat-value {
                 font-size: 22px;
@@ -489,6 +512,10 @@
                 <div class="stat-label">✅ 月可结余</div>
                 <div class="stat-value positive" id="monthBalance">--</div>
                 <div class="stat-sub">可支出 - 实际支出</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🏷️ 各账户余额</div>
+                <div id="accountStats" style="text-align:left;padding:4px 8px;"></div>
             </div>
         </div>
 
@@ -659,13 +686,9 @@
         const MONTHLY_SAVING_GOAL = 500;
         const FIXED_RATE = 0.10;
 
-        // 缓存全部记录
         let allRecords = [];
-
-        // 当前查看的年月
-        const now = new Date();
-        let viewYear = now.getFullYear();
-        let viewMonth = now.getMonth() + 1;
+        let viewYear = new Date().getFullYear();
+        let viewMonth = new Date().getMonth() + 1;
 
         // DOM 元素
         const modalOverlay = document.getElementById('modalOverlay');
@@ -706,42 +729,29 @@
         // ========== 转账复选框交互 ==========
         formIsTransfer.addEventListener('change', function() {
             if (this.checked) {
-                // 显示转账字段，隐藏普通账户字段
                 transferFields.style.display = 'block';
                 normalAccountFields.style.display = 'none';
-                
-                // 禁用收支类型
                 formType.disabled = true;
                 formType.value = '';
                 typeRequired.textContent = '';
                 typeHint.textContent = '⛔ 转账不需要选择收支类型';
                 typeHint.style.color = '#d1453b';
-                
-                // 清空普通账户
                 formAccount.value = '';
                 accountRequired.textContent = '';
                 accountHint.textContent = '⛔ 转账请使用下方转出/转入账户';
                 accountHint.style.color = '#d1453b';
-                
-                // 清空转出/转入
                 formFromAccount.value = '';
                 formToAccount.value = '';
             } else {
-                // 恢复普通记账界面
                 transferFields.style.display = 'none';
                 normalAccountFields.style.display = 'grid';
-                
-                // 启用收支类型
                 formType.disabled = false;
                 typeRequired.textContent = '*';
                 typeHint.textContent = '选择收入或支出';
                 typeHint.style.color = '#8a9aa8';
-                
-                // 恢复账户字段
                 accountRequired.textContent = '*';
                 accountHint.textContent = '选择收支对应的账户';
                 accountHint.style.color = '#8a9aa8';
-                
                 formFromAccount.value = '';
                 formToAccount.value = '';
             }
@@ -833,7 +843,6 @@
             };
 
             if (isTransfer) {
-                // ===== 转账 =====
                 if (!fromAccount || !toAccount) {
                     alert('请选择转出账户和转入账户');
                     return;
@@ -846,11 +855,10 @@
                 data.type = '转账';
                 data.category = '转账';
                 data.subcategory = '账户间转账';
-                data.account = toAccount; // 转入账户
-                data.fromAccount = fromAccount; // 转出账户
+                data.account = toAccount;
+                data.fromAccount = fromAccount;
 
             } else {
-                // ===== 普通记账 =====
                 if (!formType.value) {
                     alert('请选择收支类型');
                     return;
@@ -900,23 +908,15 @@
 
         // ========== 数据处理函数 ==========
 
-        // 判断是否应计入收支统计（排除转账）
         function shouldCountForStats(record) {
             return !record.isTransfer;
         }
 
-        // 判断是否影响账户余额（转账只影响转入/转出，不影响总资产）
-        function shouldAffectAccountBalance(record) {
-            return true; // 所有记录都影响账户余额（转账通过 account/fromAccount 分别处理）
-        }
-
-        // 计算各账户余额
         function calculateAccountBalances(records) {
             const balances = {};
 
             for (const r of records) {
                 if (r.isTransfer) {
-                    // 转账：转入账户增加，转出账户减少
                     if (r.account) {
                         balances[r.account] = (balances[r.account] || 0) + r.amount;
                     }
@@ -924,7 +924,6 @@
                         balances[r.fromAccount] = (balances[r.fromAccount] || 0) - r.amount;
                     }
                 } else {
-                    // 普通收支
                     if (r.type === '收入') {
                         if (r.account) {
                             balances[r.account] = (balances[r.account] || 0) + r.amount;
@@ -941,14 +940,12 @@
         }
 
         function processRecords(records, year, month) {
-            // 筛选月份记录
             const monthRecords = records.filter(r => {
                 if (!r.date) return false;
                 const d = new Date(r.date);
                 return d.getFullYear() === year && (d.getMonth() + 1) === month;
             });
 
-            // 计算总资产（所有记录，排除转账）
             let totalIncome = 0,
                 totalExpense = 0;
             for (const r of records) {
@@ -958,7 +955,6 @@
             }
             const totalAssets = totalIncome - totalExpense;
 
-            // 月度统计
             let monthIncome = 0,
                 monthExpense = 0;
             const categoryIncome = {},
@@ -985,7 +981,6 @@
             const monthAvailable = monthIncome - MONTHLY_SAVING_GOAL - monthIncome * FIXED_RATE;
             const monthBalance = monthAvailable - monthExpense;
 
-            // 计算账户余额
             const accountBalances = calculateAccountBalances(records);
 
             return {
@@ -999,10 +994,10 @@
                 subcategoryIncome,
                 subcategoryExpense,
                 recordCount: monthRecords.length,
-                accountBalances            };
+                accountBalances
+            };
         }
 
-        // 按月聚合，用于趋势图
         function buildMonthlyTrend(records, endYear, endMonth, windowSize) {
             windowSize = windowSize || 12;
             if (!records || records.length === 0) return [];
@@ -1066,11 +1061,28 @@
             el.className = 'stat-value ' + (stats.monthBalance >= 0 ? 'positive' : 'negative');
         }
 
-        // 渲染账户余额（放到统计卡下方，或者单独显示）
         function renderAccountBalances(balances) {
-            // 可以在统计区域下方添加，但为了简洁，这里我们放在控制台或调试用
-            // 也可以动态添加一个卡片，但为了保持UI简洁，我们记录到控制台
-            console.log('各账户余额:', balances);
+            const container = document.getElementById('accountStats');
+            if (!container) return;
+
+            const sorted = Object.entries(balances).sort((a, b) => b[1] - a[1]);
+
+            if (sorted.length === 0) {
+                container.innerHTML = '<div style="color:#8a9aa8;font-size:13px;text-align:center;">暂无账户数据</div>';
+                return;
+            }
+
+            let html = '';
+            for (const [account, balance] of sorted) {
+                const color = balance > 0 ? 'positive' : (balance < 0 ? 'negative' : 'neutral');
+                html += `
+                    <div class="account-item">
+                        <span class="name">${account}</span>
+                        <span class="balance ${color}">¥${balance.toFixed(0)}</span>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
         }
 
         function renderPie(domId, incomeData, expenseData, existing) {
